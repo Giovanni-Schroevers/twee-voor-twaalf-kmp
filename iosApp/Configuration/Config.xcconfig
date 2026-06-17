@@ -1,0 +1,7 @@
+TEAM_ID=
+
+PRODUCT_NAME=Tweevoortwaalfkmp
+PRODUCT_BUNDLE_IDENTIFIER=com.fsa_profgroep_4.twee_voor_twaalf_kmp.Tweevoortwaalfkmp$(TEAM_ID)
+
+CURRENT_PROJECT_VERSION=1
+MARKETING_VERSION=1.0
