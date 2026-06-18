@@ -1,6 +1,7 @@
 package com.fsa_profgroep_4.twee_voor_twaalf_kmp.di
 
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.Greeting
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthTokenStore
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.EchoSocket
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ExampleApi
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.KtorExampleApi
@@ -23,8 +24,13 @@ val appModule: Module = module {
     // hand in the UI, Koin provides it. Swap this for real dependencies later.
     single { Greeting() }
 
+    // Holds auth tokens for the bearer flow. In-memory for now (see AuthTokenStore).
+    // Login writes to it via `get<AuthTokenStore>().update(access, refresh)`.
+    single { AuthTokenStore() }
+
     // One shared HttpClient for the whole app (expensive to create, safe to reuse).
-    single { createHttpClient() }
+    // `get()` supplies the AuthTokenStore so requests carry the bearer token.
+    single { createHttpClient(get()) }
 
     // Bind the ExampleApi interface to its Ktor implementation; `get()` pulls the
     // HttpClient above. Call it from a coroutine: `get<ExampleApi>().firstPost()`.

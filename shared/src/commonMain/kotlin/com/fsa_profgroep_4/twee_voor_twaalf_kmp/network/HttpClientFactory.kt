@@ -1,6 +1,9 @@
 package com.fsa_profgroep_4.twee_voor_twaalf_kmp.network
 
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.auth.providers.BearerTokens
+import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
@@ -16,8 +19,11 @@ import kotlinx.serialization.json.Json
  * `ContentNegotiation` + `json(...)` teaches Ktor to (de)serialize request and
  * response bodies as JSON using kotlinx.serialization. `ignoreUnknownKeys` makes
  * parsing tolerant of extra fields the API returns that we don't model.
+ *
+ * The [tokenStore] feeds the bearer-auth flow: after login writes tokens to it,
+ * every request automatically carries `Authorization: Bearer <token>`.
  */
-fun createHttpClient(): HttpClient = HttpClient {
+fun createHttpClient(tokenStore: AuthTokenStore): HttpClient = HttpClient {
     install(ContentNegotiation) {
         json(
             Json {
@@ -29,4 +35,17 @@ fun createHttpClient(): HttpClient = HttpClient {
     // does the actual WS work (okhttp/cio fully; darwin in Ktor 3.x) — see
     // EchoSocket for usage.
     install(WebSockets)
+
+    // Bearer-token auth. `loadTokens` supplies the Authorization header for each
+    // request. There's no refresh flow (no refresh endpoint) — when the access
+    // token is rejected, the user simply logs in again.
+    install(Auth) {
+        bearer {
+            loadTokens {
+                tokenStore.accessToken?.let { access ->
+                    BearerTokens(accessToken = access, refreshToken = tokenStore.refreshToken ?: "")
+                }
+            }
+        }
+    }
 }
