@@ -8,6 +8,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.AccountScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.ChangePasswordScreen
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.GameScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.HomeScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.LoginScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.OfflineConfigScreen
@@ -42,6 +43,9 @@ data object OfflineConfigKey : NavKey
 @Serializable
 data object OnlineLobbyKey : NavKey
 
+@Serializable
+data object GameKey : NavKey
+
 /**
  * Hosts the app's navigation. A mutable back stack starts at [HomeKey]; screens
  * push/pop keys through the callbacks below. After a successful login/register we
@@ -63,6 +67,12 @@ fun AppNavHost() {
     fun finishAuth() {
         backStack.removeAll { it == LoginKey || it == RegisterKey }
         if (backStack.isEmpty()) backStack.add(HomeKey)
+    }
+
+    // Leaving the game returns to Home rather than the setup screen behind it.
+    fun goHome() {
+        backStack.clear()
+        backStack.add(HomeKey)
     }
 
     NavDisplay(
@@ -105,13 +115,20 @@ fun AppNavHost() {
                 ChangePasswordScreen(onBack = { pop() })
             }
             entry<OfflineConfigKey> {
-                OfflineConfigScreen(onBack = { pop() })
+                OfflineConfigScreen(
+                    onBack = { pop() },
+                    onStartGame = { goTo(GameKey) },
+                )
             }
             entry<OnlineLobbyKey> {
                 OnlineLobbyScreen(
                     onBack = { pop() },
                     onOpenAccount = { goTo(AccountKey) },
+                    onStartGame = { goTo(GameKey) },
                 )
+            }
+            entry<GameKey> {
+                GameScreen(onExit = { goHome() })
             }
         },
     )

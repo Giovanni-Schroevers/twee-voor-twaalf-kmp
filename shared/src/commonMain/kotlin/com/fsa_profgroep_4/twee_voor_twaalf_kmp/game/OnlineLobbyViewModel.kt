@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.AuthRepository
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.GameSettingsRepository
-import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.LobbyClient
-import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.LobbyEvent
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ClientMessage
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.OnlineGameClient
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.OnlineSession
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.PlayerProfile
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.PuzzlePreference
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.QuizMode
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ServerMessage
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.backendMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,34 +33,41 @@ data class OnlineLobbyUiState(
     val opponent: PlayerProfile? = null,
     /** Whether the websocket is currently open. */
     val connected: Boolean = false,
-    // Host-only settings, persisted via GameSettingsRepository (sent with
-    // start_game in a later slice).
+    // Host-only settings, persisted via GameSettingsRepository.
     val puzzle: PuzzlePreference = PuzzlePreference.RANDOM,
     val quizMode: QuizMode = QuizMode.SAME,
     val joinCodeInput: String = "",
     val error: String? = null,
+    /** Flips true once the game has started; the screen navigates to the game. */
+    val navigateToGame: Boolean = false,
 )
 
 /**
- * Backs the online lobby. On open it auto-hosts (one websocket via [LobbyClient]);
- * entering a code and joining cancels that connection and opens a guest one. A
- * generation counter makes role switches clean: events from a superseded
- * connection are ignored, so a stale "closed" can't clobber the new state.
+ * Backs the online lobby. On open it auto-hosts (one websocket via [OnlineGameClient]);
+ * entering a code and joining closes that connection and opens a guest one. A
+ * generation counter makes role switches clean: events from a superseded connection
+ * are ignored.
  *
- * Starting the game is a later slice, so the host's [puzzle]/[quizMode] are kept in
- * state but not yet sent.
+ * The host's "Start spel" sends `start_game`; the resulting `game_started` (received
+ * by both players) hands the live [OnlineSession] + round to [GameSessionHolder] and
+ * signals navigation — the same socket then carries the game.
  */
 class OnlineLobbyViewModel(
     private val auth: AuthRepository,
-    private val lobbyClient: LobbyClient,
+    private val client: OnlineGameClient,
     private val settings: GameSettingsRepository,
+    private val holder: GameSessionHolder,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(OnlineLobbyUiState())
     val state: StateFlow<OnlineLobbyUiState> = _state.asStateFlow()
 
     private var connectionJob: Job? = null
+    private var session: OnlineSession? = null
     private var generation = 0
+
+    /** Set once the session has been handed to the game, so we don't close it. */
+    private var handedOff = false
 
     init {
         // Keep the puzzle/quiz-mode in state mirrored to the persisted settings.
@@ -83,7 +93,23 @@ class OnlineLobbyViewModel(
         connect(LobbyRole.GUEST, code = code)
     }
 
-    // Persist the choice; the change flows back into state via the collector above.
+    /** Host action: ask the server to start the match. */
+    fun start() {
+        val current = session ?: return
+        val ui = _state.value
+        if (ui.role != LobbyRole.HOST) return
+        if (ui.opponent == null) {
+            _state.update { it.copy(error = "Wacht tot een speler meedoet.") }
+            return
+        }
+        viewModelScope.launch {
+            runCatching { current.send(ClientMessage.StartGame(ui.quizMode, ui.puzzle)) }
+                .onFailure { failure ->
+                    _state.update { it.copy(error = failure.backendMessage("Kon het spel niet starten.")) }
+                }
+        }
+    }
+
     fun onPuzzleChange(value: PuzzlePreference) = settings.setPuzzle(value)
 
     fun onQuizModeChange(value: QuizMode) = settings.setQuizMode(value)
@@ -91,11 +117,13 @@ class OnlineLobbyViewModel(
     fun onJoinCodeChange(value: String) =
         _state.update { it.copy(joinCodeInput = value, error = null) }
 
-    /** (Re)opens the websocket in the given [role]; cancels any current connection. */
+    /** (Re)opens the websocket in the given [role]; closes any current connection. */
     private fun connect(role: LobbyRole, code: String?) {
         val user = auth.currentUser.value ?: return
+        val generationAtStart = ++generation
+        val previous = session
         connectionJob?.cancel()
-        val myGeneration = ++generation
+        session = null
         _state.update {
             it.copy(
                 role = role,
@@ -106,38 +134,70 @@ class OnlineLobbyViewModel(
             )
         }
         connectionJob = viewModelScope.launch {
-            lobbyClient.connect(user.username, user.avatar, code).collect { event ->
-                if (myGeneration != generation) return@collect // superseded
-                reduce(event, role)
+            previous?.let { runCatching { it.close() } }
+            val opened = runCatching { client.connect(user.username, user.avatar, code) }.getOrElse { failure ->
+                if (generationAtStart == generation) {
+                    _state.update {
+                        it.copy(error = failure.backendMessage("Kon geen verbinding maken met de server."))
+                    }
+                }
+                return@launch
             }
+            if (generationAtStart != generation) {
+                runCatching { opened.close() }
+                return@launch
+            }
+            session = opened
+            _state.update { it.copy(connected = true) }
+            opened.incoming.collect { message ->
+                if (generationAtStart != generation) return@collect
+                reduce(message, role, opened)
+            }
+            if (generationAtStart == generation) _state.update { it.copy(connected = false) }
         }
     }
 
-    private fun reduce(event: LobbyEvent, role: LobbyRole) {
-        when (event) {
-            LobbyEvent.Opened -> _state.update { it.copy(connected = true) }
-            is LobbyEvent.Created -> _state.update { it.copy(code = event.code, connected = true) }
-            is LobbyEvent.Joined ->
-                _state.update { it.copy(code = event.code, opponent = event.opponent, connected = true) }
-            is LobbyEvent.OpponentJoined -> _state.update { it.copy(opponent = event.opponent) }
-            is LobbyEvent.Failed -> {
-                _state.update { it.copy(error = event.message, connected = false) }
+    private fun reduce(message: ServerMessage, role: LobbyRole, current: OnlineSession) {
+        when (message) {
+            is ServerMessage.LobbyCreated -> _state.update { it.copy(code = message.code) }
+            is ServerMessage.JoinedLobby ->
+                _state.update { it.copy(code = message.code, opponent = message.opponent) }
+            is ServerMessage.PlayerJoined -> _state.update { it.copy(opponent = message.opponent) }
+            is ServerMessage.GameStarted -> handOff(current, message)
+            ServerMessage.ProceedToWord -> Unit // not relevant in the lobby
+            is ServerMessage.LobbyError -> {
+                _state.update { it.copy(error = message.message) }
                 // A bad/full join leaves us with no lobby; fall back to hosting our own.
                 if (role == LobbyRole.GUEST) connect(LobbyRole.HOST, code = null)
             }
-            LobbyEvent.Closed -> _state.update { it.copy(connected = false) }
         }
     }
 
-    /**
-     * Closes the websocket. Called from the screen's `onDispose`, since this app
-     * resolves ViewModels via Koin (`koinInject`) rather than a ViewModelStore, so
-     * [onCleared] is not guaranteed to run when the user leaves the lobby.
-     */
-    fun disconnect() {
-        generation++ // ignore any in-flight events from the cancelled connection
+    /** Hands the live session + round to the game and stops driving it from the lobby. */
+    private fun handOff(current: OnlineSession, started: ServerMessage.GameStarted) {
+        holder.set(PendingGame.Online(started.round, current))
+        handedOff = true
+        generation++ // ignore any further events here
         connectionJob?.cancel()
         connectionJob = null
+        session = null
+        _state.update { it.copy(navigateToGame = true) }
+    }
+
+    /**
+     * Closes the websocket unless it was handed to the game. Called from the screen's
+     * `onDispose`, since this app resolves ViewModels via Koin (`koinInject`) rather
+     * than a ViewModelStore, so [onCleared] is not guaranteed to run.
+     */
+    fun disconnect() {
+        generation++
+        connectionJob?.cancel()
+        connectionJob = null
+        if (!handedOff) {
+            val open = session
+            session = null
+            if (open != null) viewModelScope.launch { runCatching { open.close() } }
+        }
     }
 
     override fun onCleared() {

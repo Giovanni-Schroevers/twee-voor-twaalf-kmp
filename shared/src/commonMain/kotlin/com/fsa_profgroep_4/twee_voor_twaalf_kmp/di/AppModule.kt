@@ -13,15 +13,20 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.SettingsViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.AppDatabase
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.GameSettingsRepository
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.SessionStore
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.GameSessionHolder
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.GameViewModel
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.OfflineConfigViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.OnlineLobbyViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthApi
-import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.LobbyClient
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthTokenStore
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.BackendUrlProvider
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.EchoSocket
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ExampleApi
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.GameApi
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.KtorAuthApi
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.KtorExampleApi
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.KtorGameApi
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.OnlineGameClient
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.createHttpClient
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -103,13 +108,26 @@ val appModule: Module = module {
     // restarts. AuthRepository restores from and writes through to it.
     single { SessionStore(get()) }
 
-    // --- online game lobby ---
-    // Websocket client for /ws/lobby, reusing the shared HttpClient + base URL.
-    single { LobbyClient(get(), get()) }
+    // --- game ---
+    // Solo round endpoint (POST /game/solo), behind the GameApi interface.
+    single<GameApi> { KtorGameApi(get()) }
 
-    // Backs the online lobby screen; auto-hosts via the LobbyClient, reads the
-    // signed-in user from the AuthRepository, and the saved settings.
-    factory { OnlineLobbyViewModel(get(), get(), get()) }
+    // Opens the bidirectional /ws/lobby session (lobby + online gameplay).
+    single { OnlineGameClient(get(), get()) }
+
+    // One-shot bridge from a setup screen to the game screen (round + online session).
+    single { GameSessionHolder() }
+
+    // Backs the offline setup screen: fetches a solo round and stages it.
+    factory { OfflineConfigViewModel(get(), get(), get()) }
+
+    // Backs the online lobby screen; auto-hosts via the OnlineGameClient, reads the
+    // signed-in user from the AuthRepository and the saved settings, and stages the
+    // game in the holder once it starts.
+    factory { OnlineLobbyViewModel(get(), get(), get(), get()) }
+
+    // Drives gameplay (answering + word phase), reading the staged game from the holder.
+    factory { GameViewModel(get()) }
 }
 
 /**

@@ -2,6 +2,7 @@ package com.fsa_profgroep_4.twee_voor_twaalf_kmp.network
 
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.DefaultRequest
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
@@ -42,6 +43,12 @@ fun createHttpClient(
                 ignoreUnknownKeys = true
             }
         )
+    }
+    // Enables timeouts and, crucially, per-request overrides (see GameApi). We set
+    // no global request cap on purpose: that would close the long-lived game
+    // websocket. Only connection setup is bounded here.
+    install(HttpTimeout) {
+        connectTimeoutMillis = 15_000
     }
     // Enables client.webSocket { ... } / client.webSocketSession(...). The engine
     // does the actual WS work (okhttp/cio fully; darwin in Ktor 3.x) — see

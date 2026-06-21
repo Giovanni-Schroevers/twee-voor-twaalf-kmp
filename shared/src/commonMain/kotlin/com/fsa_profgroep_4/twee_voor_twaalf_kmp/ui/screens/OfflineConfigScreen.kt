@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -19,12 +20,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.GameSettingsRepository
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.OfflineConfigViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.PuzzlePreference
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.BrandButton
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.BrandTopBar
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.Dropdown
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.Eyebrow
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.FormMessage
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Danger
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Ink
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Line
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Muted
@@ -34,13 +37,20 @@ import org.koin.compose.koinInject
 /**
  * Offline (single-device) game setup — wireframe `ConfigOffline`. Pick the puzzle
  * type, read the "one device" explainer, then start. The puzzle choice is saved
- * locally (shared with the online lobby). Starting the game is a later slice, so
- * the button is intentionally inert for now.
+ * locally (shared with the online lobby). Start fetches a solo round and opens the
+ * game.
  */
 @Composable
-fun OfflineConfigScreen(onBack: () -> Unit) {
-    val settings = koinInject<GameSettingsRepository>()
-    val saved by settings.settings.collectAsState()
+fun OfflineConfigScreen(onBack: () -> Unit, onStartGame: () -> Unit) {
+    val viewModel = koinInject<OfflineConfigViewModel>()
+    val state by viewModel.state.collectAsState()
+
+    LaunchedEffect(state.ready) {
+        if (state.ready) {
+            viewModel.consumeReady()
+            onStartGame()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Paper)) {
         BrandTopBar(title = "Offline spel", flat = true, onBack = onBack)
@@ -52,18 +62,20 @@ fun OfflineConfigScreen(onBack: () -> Unit) {
             Dropdown(
                 label = "Mini-puzzel",
                 options = PuzzlePreference.entries,
-                selected = saved.puzzle,
+                selected = state.puzzle,
                 optionLabel = { it.label },
-                onSelect = { settings.setPuzzle(it) },
+                onSelect = viewModel::onPuzzleChange,
             )
             InfoCard(
                 title = "Eén toestel",
                 body = "Speel om de beurt op dit toestel. Geen tegenstander nodig.",
             )
+            state.error?.let { FormMessage(text = it, color = Danger) }
             Spacer(Modifier.weight(1f))
             BrandButton(
                 text = "Start spel",
-                onClick = { /* gameplay is the next slice */ },
+                onClick = viewModel::start,
+                loading = state.loading,
                 leading = { Text("▶", color = Color.White, fontSize = 15.sp) },
             )
         }

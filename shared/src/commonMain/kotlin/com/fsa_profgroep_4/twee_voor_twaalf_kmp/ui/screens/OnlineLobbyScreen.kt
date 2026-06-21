@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -62,13 +63,20 @@ import org.koin.compose.koinInject
 fun OnlineLobbyScreen(
     onBack: () -> Unit,
     onOpenAccount: () -> Unit,
+    onStartGame: () -> Unit,
 ) {
     val viewModel = koinInject<OnlineLobbyViewModel>()
     val urlProvider = koinInject<BackendUrlProvider>()
     val state by viewModel.state.collectAsState()
 
+    // The game starts (for both host and guest) when the server pushes game_started.
+    LaunchedEffect(state.navigateToGame) {
+        if (state.navigateToGame) onStartGame()
+    }
+
     // ViewModels here come from Koin, not a ViewModelStore, so close the socket
-    // ourselves when the lobby leaves the composition (e.g. on back).
+    // ourselves when the lobby leaves the composition (e.g. on back). Once the game
+    // has started the session is handed off, so disconnect() leaves it open.
     DisposableEffect(Unit) {
         onDispose { viewModel.disconnect() }
     }
@@ -185,7 +193,7 @@ private fun HostContent(
 
     BrandButton(
         text = "Start spel",
-        onClick = { /* gameplay is the next slice */ },
+        onClick = viewModel::start,
     )
 }
 
