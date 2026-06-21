@@ -10,6 +10,8 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.AccountScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.ChangePasswordScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.HomeScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.LoginScreen
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.OfflineConfigScreen
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.OnlineLobbyScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.RegisterScreen
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.screens.SettingsScreen
 import kotlinx.serialization.Serializable
@@ -33,6 +35,12 @@ data object SettingsKey : NavKey
 
 @Serializable
 data object ChangePasswordKey : NavKey
+
+@Serializable
+data object OfflineConfigKey : NavKey
+
+@Serializable
+data object OnlineLobbyKey : NavKey
 
 /**
  * Hosts the app's navigation. A mutable back stack starts at [HomeKey]; screens
@@ -65,8 +73,8 @@ fun AppNavHost() {
                 HomeScreen(
                     onOpenAccount = { goTo(AccountKey) },
                     onOpenSettings = { goTo(SettingsKey) },
-                    onOfflineGame = { /* game screens are out of scope */ },
-                    onOnlineGame = { /* game screens are out of scope */ },
+                    onOfflineGame = { goTo(OfflineConfigKey) },
+                    onOnlineGame = { goTo(OnlineLobbyKey) },
                 )
             }
             entry<LoginKey> {
@@ -95,6 +103,15 @@ fun AppNavHost() {
             }
             entry<ChangePasswordKey> {
                 ChangePasswordScreen(onBack = { pop() })
+            }
+            entry<OfflineConfigKey> {
+                OfflineConfigScreen(onBack = { pop() })
+            }
+            entry<OnlineLobbyKey> {
+                OnlineLobbyScreen(
+                    onBack = { pop() },
+                    onOpenAccount = { goTo(AccountKey) },
+                )
             }
         },
     )

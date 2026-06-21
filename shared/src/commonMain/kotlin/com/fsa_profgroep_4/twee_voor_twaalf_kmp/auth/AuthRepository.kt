@@ -1,5 +1,6 @@
 package com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth
 
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.SessionStore
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthApi
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthTokenStore
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.BackendException
@@ -11,9 +12,13 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.UserDto
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.auth.authProvider
 import io.ktor.client.plugins.auth.providers.BearerAuthProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * The app's single source of truth for who is signed in.
@@ -30,11 +35,28 @@ class AuthRepository(
     private val api: AuthApi,
     private val tokenStore: AuthTokenStore,
     private val client: HttpClient,
+    private val sessionStore: SessionStore,
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private val _currentUser = MutableStateFlow<UserDto?>(null)
 
     /** The signed-in user, or `null` when logged out. */
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
+
+    init {
+        // Restore a persisted session on startup so the user stays signed in. Runs
+        // async; the UI (which observes currentUser) updates once it resolves. We
+        // skip it if a login already set a user, so we never clobber a fresh login.
+        scope.launch {
+            if (_currentUser.value != null) return@launch
+            val stored = sessionStore.load() ?: return@launch
+            if (_currentUser.value == null) {
+                tokenStore.update(accessToken = stored.token, refreshToken = null)
+                _currentUser.value = stored.user
+            }
+        }
+    }
 
     /** Logs in and, on success, stores the token and the user. */
     suspend fun login(username: String, password: String): Result<Unit> = runCatching {
@@ -62,13 +84,13 @@ class AuthRepository(
     suspend fun updateProfile(username: String, email: String): Result<Unit> = runCatching {
         if (_currentUser.value == null) throw AuthException("Je bent niet ingelogd.")
         val updated = api.updateUser(UpdateUserRequest(username.trim(), email.trim()))
-        _currentUser.value = updated
+        applyUser(updated)
     }.toUnit()
 
     /** Uploads a new avatar image and refreshes the signed-in user. */
     suspend fun uploadAvatar(bytes: ByteArray, filename: String, mimeType: String): Result<Unit> = runCatching {
         if (_currentUser.value == null) throw AuthException("Je bent niet ingelogd.")
-        _currentUser.value = api.uploadAvatar(bytes, filename, mimeType)
+        applyUser(api.uploadAvatar(bytes, filename, mimeType))
     }.toUnit()
 
     /** Changes the signed-in user's password. */
@@ -90,6 +112,7 @@ class AuthRepository(
         // too, otherwise a stale token would be attached after switching backends.
         client.authProvider<BearerAuthProvider>()?.clearToken()
         _currentUser.value = null
+        scope.launch { sessionStore.clear() }
     }
 
     private fun applySession(token: String, user: UserDto) {
@@ -97,6 +120,13 @@ class AuthRepository(
         // provider uses an empty refresh token under the hood.
         tokenStore.update(accessToken = token, refreshToken = null)
         _currentUser.value = user
+        scope.launch { sessionStore.save(token, user) }
+    }
+
+    /** Updates the in-memory user and persists it (token unchanged). */
+    private fun applyUser(user: UserDto) {
+        _currentUser.value = user
+        scope.launch { sessionStore.updateUser(user) }
     }
 }
 

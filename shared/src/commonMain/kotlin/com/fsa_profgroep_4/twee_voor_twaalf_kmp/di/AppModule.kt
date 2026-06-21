@@ -1,5 +1,8 @@
 package com.fsa_profgroep_4.twee_voor_twaalf_kmp.di
 
+import androidx.room.RoomDatabase
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import kotlinx.coroutines.Dispatchers
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.Greeting
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.AccountViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.AuthRepository
@@ -7,7 +10,12 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.ChangePasswordViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.LoginViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.RegisterViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.SettingsViewModel
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.AppDatabase
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.GameSettingsRepository
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.SessionStore
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.OnlineLobbyViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthApi
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.LobbyClient
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.AuthTokenStore
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.BackendUrlProvider
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.EchoSocket
@@ -61,8 +69,9 @@ val appModule: Module = module {
     single<AuthApi> { KtorAuthApi(get()) }
 
     // Single source of truth for the signed-in user + token. UI observes its
-    // `currentUser` StateFlow; ViewModels call its login/register/etc.
-    single { AuthRepository(get(), get(), get()) }
+    // `currentUser` StateFlow; ViewModels call its login/register/etc. The
+    // SessionStore lets it restore/persist the session across restarts.
+    single { AuthRepository(get(), get(), get(), get()) }
 
     // Screen ViewModels. `factory` hands a fresh instance to each screen that
     // resolves it via koinInject(); all share the single AuthRepository above.
@@ -71,7 +80,40 @@ val appModule: Module = module {
     factory { AccountViewModel(get(), get()) }
     factory { SettingsViewModel(get(), get()) }
     factory { ChangePasswordViewModel(get()) }
+
+    // --- persistence (Room) ---
+    // The database, built from the per-platform builder in `platformModule`. The
+    // bundled SQLite driver ships the engine so every target uses the same one.
+    single<AppDatabase> {
+        get<RoomDatabase.Builder<AppDatabase>>()
+            .setDriver(BundledSQLiteDriver())
+            .setQueryCoroutineContext(Dispatchers.Default)
+            // No hand-written migrations yet: on a schema bump, recreate the DB.
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
+    }
+    single { get<AppDatabase>().settingsDao() }
+    single { get<AppDatabase>().sessionDao() }
+
+    // Locally persisted game settings (puzzle + quiz mode), observed by the setup
+    // screens so the player doesn't have to re-pick them each time.
+    single { GameSettingsRepository(get()) }
+
+    // Persists the login session (JWT + user) so the user stays signed in across
+    // restarts. AuthRepository restores from and writes through to it.
+    single { SessionStore(get()) }
+
+    // --- online game lobby ---
+    // Websocket client for /ws/lobby, reusing the shared HttpClient + base URL.
+    single { LobbyClient(get(), get()) }
+
+    // Backs the online lobby screen; auto-hosts via the LobbyClient, reads the
+    // signed-in user from the AuthRepository, and the saved settings.
+    factory { OnlineLobbyViewModel(get(), get(), get()) }
 }
 
-/** All modules the app starts with. Add more here as features grow. */
-val appModules: List<Module> = listOf(appModule)
+/**
+ * All modules the app starts with. [platformModule] supplies the per-platform
+ * database builder. Add more here as features grow.
+ */
+val appModules: List<Module> = listOf(appModule, platformModule)

@@ -42,6 +42,12 @@ val generateBackendConfig by tasks.registering {
 }
 
 kotlin {
+    // Room generates expect/actual classes (the database constructor); this opts
+    // into that still-Beta feature so its warning doesn't clutter the build.
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     listOf(
         iosArm64(),
         iosSimulatorArm64()

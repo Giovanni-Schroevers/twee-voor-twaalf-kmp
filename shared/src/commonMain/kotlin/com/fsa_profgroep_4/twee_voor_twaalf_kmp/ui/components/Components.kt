@@ -21,10 +21,19 @@ import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -301,4 +310,117 @@ fun FormMessage(text: String, color: Color, modifier: Modifier = Modifier) {
         textAlign = TextAlign.Center,
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+/** Small uppercase section label (the wireframe's `.eyebrow`). */
+@Composable
+fun Eyebrow(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text.uppercase(),
+        color = Muted,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Pill segmented control (the wireframe's `.seg`). The option at [selectedIndex]
+ * is filled red; tapping any segment calls [onSelect] with its index.
+ */
+@Composable
+fun Segmented(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(modifier.clip(shape).border(1.5.dp, Line, shape)) {
+        options.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(if (selected) BrandRed else Color.Transparent)
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) Color.White else InkSoft,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Status chip with a coloured dot (the wireframe's `.chip.dot`). Green when
+ * [connected], muted otherwise.
+ */
+@Composable
+fun ConnectionChip(connected: Boolean, text: String, modifier: Modifier = Modifier) {
+    val dotColor = if (connected) Color(0xFF3FA34D) else Muted
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(Fill)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(dotColor))
+        Text(text = text, color = InkSoft, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/**
+ * Read-only dropdown matching [LabeledField]'s look (the wireframe's `.select`).
+ * Generic over the option type; [optionLabel] renders each one.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun <T> Dropdown(
+    label: String,
+    options: List<T>,
+    selected: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier,
+    ) {
+        OutlinedTextField(
+            value = optionLabel(selected),
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(label) },
+            shape = RoundedCornerShape(8.dp),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
 }
