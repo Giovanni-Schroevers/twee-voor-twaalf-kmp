@@ -1,6 +1,6 @@
 [versions]
 agp = "9.2.1"
-android-compileSdk = "36"
+android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "36"
 androidx-activity = "1.13.0"
@@ -22,6 +22,10 @@ multiplatform-nav3-ui = "1.1.1"
 ktor = "3.5.0"
 kotlinx-serialization = "1.11.0"
 coil = "3.4.0"
+# Pinned to 0.13.0: it's the newest FileKit whose Kotlin/Native klib ABI (2.3.0)
+# is consumable by this project's Kotlin 2.3.20. 0.14.x is built with Kotlin 2.4
+# (ABI 2.4.0) and fails the iOS compile. See [[kotlin-version-pin]].
+filekit = "0.13.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -61,6 +65,8 @@ ktor-client-auth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
+filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
+filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

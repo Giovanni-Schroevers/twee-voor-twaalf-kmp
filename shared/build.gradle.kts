@@ -10,6 +10,37 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
+// Deployed backend URL, baked into commonMain at build time as BACKEND_URL.
+// Empty when `backend.url` is unset (the default) — in that case appBaseUrl()
+// falls back to a per-platform localhost default for local development. Set the
+// property (gradle.properties / ~/.gradle/gradle.properties / -Pbackend.url=...)
+// to point all platforms at a real backend. Env vars aren't used: they don't
+// work on iOS / installed apps.
+val backendUrl = (findProperty("backend.url") as String?).orEmpty()
+
+val generateBackendConfig by tasks.registering {
+    val outDir = layout.buildDirectory.dir("generated/backendConfig/kotlin")
+    val url = backendUrl
+    inputs.property("backendUrl", url)
+    outputs.dir(outDir)
+    doLast {
+        outDir.get()
+            .file("com/fsa_profgroep_4/twee_voor_twaalf_kmp/network/BackendConfig.kt")
+            .asFile
+            .apply {
+                parentFile.mkdirs()
+                writeText(
+                    """
+                    package com.fsa_profgroep_4.twee_voor_twaalf_kmp.network
+
+                    /** Generated from the `backend.url` Gradle property — do not edit. */
+                    internal const val BACKEND_URL: String = "$url"
+                    """.trimIndent() + "\n",
+                )
+            }
+    }
+}
+
 kotlin {
     listOf(
         iosArm64(),
@@ -40,6 +71,10 @@ kotlin {
     }
     
     sourceSets {
+        // Pull the generated BackendConfig.kt (BACKEND_URL) into commonMain.
+        commonMain {
+            kotlin.srcDir(generateBackendConfig)
+        }
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.ktor.client.okhttp)
@@ -73,6 +108,8 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
+            implementation(libs.filekit.core)
+            implementation(libs.filekit.dialogs.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

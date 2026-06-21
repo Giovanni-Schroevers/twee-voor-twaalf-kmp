@@ -4,5 +4,23 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!--
+	  App Transport Security: iOS blocks non-HTTPS connections by default. Allow
+	  cleartext only to local hosts (localhost / .local / private ranges) so the
+	  simulator can reach a backend running on the host over HTTP during dev. ATS
+	  stays enforced for remote hosts, so a deployed/HTTPS tunnel backend is
+	  unaffected. This is the iOS analog of androidApp's network_security_config.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!--
+	  Avatar capture. Gallery picking uses PHPicker and needs no permission;
+	  the camera requires this usage description (shown in the iOS prompt).
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>Gebruik je camera om een profielfoto te maken.</string>
 </dict>
 </plist>

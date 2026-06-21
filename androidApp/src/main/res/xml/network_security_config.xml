@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext (plain HTTP) is blocked by default on modern Android. Allow it ONLY
+  for the local development hosts so the emulator can reach a backend running on
+  the host machine over HTTP. Everything else stays HTTPS-only — a deployed
+  backend (e.g. a Cloudflare tunnel) is https and unaffected.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Android emulator's alias for the host machine -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <!-- Genymotion's host alias / direct localhost -->
+        <domain includeSubdomains="true">10.0.3.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

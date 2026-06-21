@@ -1,11 +1,13 @@
 package com.fsa_profgroep_4.twee_voor_twaalf_kmp.network
 
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.request.url
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -23,7 +25,17 @@ import kotlinx.serialization.json.Json
  * The [tokenStore] feeds the bearer-auth flow: after login writes tokens to it,
  * every request automatically carries `Authorization: Bearer <token>`.
  */
-fun createHttpClient(tokenStore: AuthTokenStore): HttpClient = HttpClient {
+fun createHttpClient(
+    tokenStore: AuthTokenStore,
+    urlProvider: BackendUrlProvider,
+): HttpClient = HttpClient {
+    // Every request without an absolute URL is resolved against the backend's
+    // base URL, so APIs can use short relative paths like `api/login`. The block
+    // runs per request and reads `urlProvider.current`, so changing the URL at
+    // runtime (Settings screen) takes effect immediately — no client rebuild.
+    install(DefaultRequest) {
+        url(urlProvider.current)
+    }
     install(ContentNegotiation) {
         json(
             Json {
