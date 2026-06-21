@@ -164,7 +164,7 @@ class OnlineLobbyViewModel(
                 _state.update { it.copy(code = message.code, opponent = message.opponent) }
             is ServerMessage.PlayerJoined -> _state.update { it.copy(opponent = message.opponent) }
             is ServerMessage.GameStarted -> handOff(current, message)
-            ServerMessage.ProceedToWord -> Unit // not relevant in the lobby
+            ServerMessage.ProceedToWord, is ServerMessage.GameFinished -> Unit // not relevant in the lobby
             is ServerMessage.LobbyError -> {
                 _state.update { it.copy(error = message.message) }
                 // A bad/full join leaves us with no lobby; fall back to hosting our own.
@@ -175,7 +175,7 @@ class OnlineLobbyViewModel(
 
     /** Hands the live session + round to the game and stops driving it from the lobby. */
     private fun handOff(current: OnlineSession, started: ServerMessage.GameStarted) {
-        holder.set(PendingGame.Online(started.round, current))
+        holder.set(PendingGame.Online(started.round, current, isHost = _state.value.role == LobbyRole.HOST))
         handedOff = true
         generation++ // ignore any further events here
         connectionJob?.cancel()

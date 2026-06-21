@@ -1,5 +1,6 @@
 package com.fsa_profgroep_4.twee_voor_twaalf_kmp.network
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -61,3 +62,28 @@ data class SoloRound(
 /** Request body for `POST /game/solo`. */
 @Serializable
 data class SoloRoundRequest(val puzzle: PuzzlePreference)
+
+/** Who won an online match. */
+@Serializable
+enum class GameOutcome {
+    @SerialName("host_won")
+    HOST_WON,
+
+    @SerialName("guest_won")
+    GUEST_WON,
+
+    @SerialName("tie")
+    TIE,
+}
+
+/** A single player's final outcome: who they are and the score they reported. */
+@Serializable
+data class PlayerResult(val profile: PlayerProfile, val score: Int)
+
+/** The final result of an online match, used for the results screen. */
+@Serializable
+data class GameResult(
+    val host: PlayerResult,
+    val guest: PlayerResult,
+    val outcome: GameOutcome,
+)

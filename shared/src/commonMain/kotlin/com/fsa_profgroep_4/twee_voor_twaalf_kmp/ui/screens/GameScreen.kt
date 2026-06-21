@@ -31,10 +31,12 @@ import androidx.compose.ui.unit.sp
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.GamePhase
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.GameUiState
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.GameViewModel
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.game.MatchResult
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.Question
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.QuestionType
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.BrandButton
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.BrandButtonStyle
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.BrandTopBar
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.Eyebrow
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.GameDivider
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.GameHeader
@@ -45,8 +47,12 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.LetterChip
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.LetterStrip
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.TaartPie
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.components.WordGrid
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.BrandRed
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.BrandRedInk
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.BrandRedSoft
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Ink
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.InkSoft
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Line
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.LineSoft
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Muted
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Paper
@@ -74,11 +80,7 @@ fun GameScreen(onExit: () -> Unit) {
         else -> when (state.phase) {
             is GamePhase.Answering -> AnsweringPhase(state, viewModel, onExit)
             GamePhase.Word -> WordPhase(state, viewModel, onExit)
-            GamePhase.Submitted -> MessageScreen(
-                title = "Ingeleverd!",
-                body = "Je antwoord is ingeleverd. De uitslag komt in de volgende stap.",
-                onExit = onExit,
-            )
+            GamePhase.Results -> ResultsPhase(state, onExit)
         }
     }
 }
@@ -97,6 +99,7 @@ private fun AnsweringPhase(state: GameUiState, viewModel: GameViewModel, onExit:
                 title = headerTitle(number, total, question),
                 time = formatTime(state.remainingSeconds),
                 onBack = onExit,
+                warning = state.timerWarning,
                 below = if (isRegular) {
                     { LetterStrip(letters = state.collectedLetters, currentIndex = index) }
                 } else {
@@ -212,6 +215,7 @@ private fun WordPhase(state: GameUiState, viewModel: GameViewModel, onExit: () -
             title = "Het twaalfletterwoord",
             time = formatTime(state.remainingSeconds),
             onBack = onExit,
+            warning = state.timerWarning,
         )
         Column(
             modifier = Modifier
@@ -252,6 +256,94 @@ private fun WordPhase(state: GameUiState, viewModel: GameViewModel, onExit: () -
         }
     }
 }
+
+@Composable
+private fun ResultsPhase(state: GameUiState, onExit: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().background(Paper)) {
+        BrandTopBar(title = "Uitslag", flat = true)
+        if (state.isOnline && state.waitingForResult) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    CircularProgressIndicator()
+                    Text("Wachten op de uitslag…", color = InkSoft, fontSize = 14.sp)
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(resultTitle(state), color = BrandRedInk, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                ScoreCard(name = "Jij", score = state.myScore ?: 0, winner = isMyWin(state))
+                if (state.isOnline && state.opponentName != null) {
+                    ScoreCard(
+                        name = state.opponentName,
+                        score = state.opponentScore ?: 0,
+                        winner = state.matchResult == MatchResult.LOST,
+                    )
+                }
+                Text(
+                    text = if (state.guessedWord) "Je raadde het twaalfletterwoord goed." else "Het twaalfletterwoord was fout.",
+                    color = if (state.guessedWord) Ink else Muted,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                )
+                state.round?.word?.let {
+                    Text("Het woord was: $it", color = InkSoft, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                BrandButton(text = "Naar home", onClick = onExit)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScoreCard(name: String, score: Int, winner: Boolean) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (winner) BrandRedSoft else Color.Transparent)
+            .border(1.5.dp, if (winner) BrandRed else Line, shape)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (winner) Text("👑", fontSize = 18.sp)
+            Text(name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+        Text(
+            "$score punten",
+            color = if (winner) BrandRedInk else Ink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+        )
+    }
+}
+
+private fun resultTitle(state: GameUiState): String = when {
+    !state.isOnline -> if (state.guessedWord) "Goed gespeeld!" else "Helaas!"
+    state.matchResult == MatchResult.WON -> "Gewonnen! 👑"
+    state.matchResult == MatchResult.LOST -> "Verloren"
+    state.matchResult == MatchResult.TIE -> "Gelijkspel"
+    else -> "Uitslag"
+}
+
+private fun isMyWin(state: GameUiState): Boolean =
+    if (state.isOnline) state.matchResult == MatchResult.WON else state.guessedWord
 
 @Composable
 private fun WaitingOverlay() {

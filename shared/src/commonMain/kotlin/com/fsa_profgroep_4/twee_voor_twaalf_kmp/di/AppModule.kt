@@ -9,6 +9,7 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.AuthRepository
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.ChangePasswordViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.LoginViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.RegisterViewModel
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.audio.SoundPlayer
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.auth.SettingsViewModel
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.AppDatabase
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.data.GameSettingsRepository
@@ -118,6 +119,10 @@ val appModule: Module = module {
     // One-shot bridge from a setup screen to the game screen (round + online session).
     single { GameSessionHolder() }
 
+    // Plays the countdown cues (warning signal + final-seconds ticks). Built-in
+    // platform tones, no assets/Context needed.
+    single { SoundPlayer() }
+
     // Backs the offline setup screen: fetches a solo round and stages it.
     factory { OfflineConfigViewModel(get(), get(), get()) }
 
@@ -127,7 +132,7 @@ val appModule: Module = module {
     factory { OnlineLobbyViewModel(get(), get(), get(), get()) }
 
     // Drives gameplay (answering + word phase), reading the staged game from the holder.
-    factory { GameViewModel(get()) }
+    factory { GameViewModel(get(), get()) }
 }
 
 /**

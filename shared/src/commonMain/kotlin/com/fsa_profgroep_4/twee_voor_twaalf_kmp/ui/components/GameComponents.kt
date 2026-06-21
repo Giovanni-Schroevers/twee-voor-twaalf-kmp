@@ -38,6 +38,7 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.BrandRedSoft
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Fill
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Ink
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Line
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Muted
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.ui.theme.Paper
 import kotlin.math.cos
 import kotlin.math.sin
@@ -52,6 +53,7 @@ fun GameHeader(
     title: String,
     time: String,
     onBack: (() -> Unit)? = null,
+    warning: Boolean = false,
     below: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier = Modifier.fillMaxWidth().background(BrandRed)) {
@@ -75,12 +77,19 @@ fun GameHeader(
                 fontSize = 15.sp,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            Text(
-                text = time,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-            )
+            // In the warning window the timer flips to an urgent white pill.
+            if (warning) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.White)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(text = time, color = BrandRedInk, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            } else {
+                Text(text = time, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
         }
         if (below != null) {
             Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) { below() }
@@ -121,7 +130,11 @@ fun LetterStrip(letters: List<Char?>, currentIndex: Int?) {
     }
 }
 
-/** Paardensprong 3×3 grid (the wireframe's `.knight`), from a 9-char [grid] string. */
+/**
+ * Paardensprong 3×3 grid (the wireframe's `.knight`), from a 9-char [grid] string.
+ * The center cell is never part of a knight's-move path, so it's shown disabled
+ * (an "×") regardless of what the data holds there — just like on TV.
+ */
 @Composable
 fun KnightGrid(grid: String, modifier: Modifier = Modifier) {
     val cells = grid.padEnd(9).take(9)
@@ -132,6 +145,7 @@ fun KnightGrid(grid: String, modifier: Modifier = Modifier) {
         for (row in 0 until 3) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 for (col in 0 until 3) {
+                    val isCenter = row == 1 && col == 1
                     val char = cells[row * 3 + col]
                     val shape = RoundedCornerShape(8.dp)
                     Box(
@@ -139,13 +153,13 @@ fun KnightGrid(grid: String, modifier: Modifier = Modifier) {
                             .weight(1f)
                             .aspectRatio(1f)
                             .clip(shape)
-                            .background(if (char.isWhitespace()) Fill else Paper)
+                            .background(if (isCenter) Fill else Paper)
                             .border(1.5.dp, Line, shape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = char.uppercaseChar().toString().trim(),
-                            color = Ink,
+                            text = if (isCenter) "×" else char.uppercaseChar().toString().trim(),
+                            color = if (isCenter) Muted else Ink,
                             fontWeight = FontWeight.Bold,
                             fontSize = 26.sp,
                         )

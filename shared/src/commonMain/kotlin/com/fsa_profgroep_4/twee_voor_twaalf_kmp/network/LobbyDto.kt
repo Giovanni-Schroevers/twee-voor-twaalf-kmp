@@ -79,6 +79,11 @@ sealed interface ServerMessage {
     @SerialName("proceed_to_word")
     data object ProceedToWord : ServerMessage
 
+    /** Pushed to both players once both have submitted a score, carrying the result. */
+    @Serializable
+    @SerialName("game_finished")
+    data class GameFinished(val result: GameResult) : ServerMessage
+
     /** Sent before the server closes a connection it cannot accept. */
     @Serializable
     @SerialName("error")
@@ -101,4 +106,9 @@ sealed interface ClientMessage {
     @Serializable
     @SerialName("finished_answering")
     data object FinishedAnswering : ClientMessage
+
+    /** Sent by a player with their final score; once both are in, the game finishes. */
+    @Serializable
+    @SerialName("submit_score")
+    data class SubmitScore(val score: Int) : ClientMessage
 }

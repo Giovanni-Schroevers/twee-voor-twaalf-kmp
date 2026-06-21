@@ -10,8 +10,15 @@ sealed interface PendingGame {
     /** Offline single-device play; no server, the client runs the timer locally. */
     data class Solo(override val round: SoloRound) : PendingGame
 
-    /** Online play over the shared [session]; advancing to the word phase is server-driven. */
-    data class Online(override val round: SoloRound, val session: OnlineSession) : PendingGame
+    /**
+     * Online play over the shared [session]; advancing is server-driven. [isHost] lets
+     * the game read its own side out of the server's result.
+     */
+    data class Online(
+        override val round: SoloRound,
+        val session: OnlineSession,
+        val isHost: Boolean,
+    ) : PendingGame
 }
 
 /**

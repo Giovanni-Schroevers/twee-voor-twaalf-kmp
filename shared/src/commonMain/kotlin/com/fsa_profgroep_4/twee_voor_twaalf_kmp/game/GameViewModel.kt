@@ -2,7 +2,10 @@ package com.fsa_profgroep_4.twee_voor_twaalf_kmp.game
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.audio.SoundPlayer
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ClientMessage
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.GameOutcome
+import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.GameResult
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.OnlineSession
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.Question
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ServerMessage
@@ -19,8 +22,11 @@ import kotlinx.coroutines.launch
 sealed interface GamePhase {
     data class Answering(val index: Int) : GamePhase
     data object Word : GamePhase
-    data object Submitted : GamePhase
+    data object Results : GamePhase
 }
+
+/** How an online match ended, from this player's perspective. */
+enum class MatchResult { WON, LOST, TIE }
 
 /**
  * A letter collected for one question. [presentationIndex] is its place in the bank
@@ -55,8 +61,19 @@ data class GameUiState(
     val letters: List<CollectedLetter> = emptyList(),
     /** The word the player types as their answer — independent of the grid. */
     val guess: String = "",
+    /** True once the countdown enters its warning window (last 2 min / last 30s). */
+    val timerWarning: Boolean = false,
     /** Online only: finished answering, waiting for the opponent before the word phase. */
     val waitingForOpponent: Boolean = false,
+    val isOnline: Boolean = false,
+    // Results:
+    val myScore: Int? = null,
+    val guessedWord: Boolean = false,
+    /** Online only: submitted our score, waiting for the server's game_finished. */
+    val waitingForResult: Boolean = false,
+    val opponentName: String? = null,
+    val opponentScore: Int? = null,
+    val matchResult: MatchResult? = null,
     val error: String? = null,
 ) {
     val currentIndex: Int? get() = (phase as? GamePhase.Answering)?.index
@@ -76,22 +93,26 @@ data class GameUiState(
 
 /**
  * Drives gameplay for both modes (see [PendingGame] from [GameSessionHolder]):
- * answering the twelve questions, then arranging collected letters into the
- * twaalfletterwoord. Money/scoring and the results screen are a later slice, so
- * "Inleveren" lands on a [GamePhase.Submitted] placeholder.
+ * answering the twelve questions (15-minute countdown), then arranging collected
+ * letters into the twaalfletterwoord (2-minute countdown), then the results.
  *
  * Solo runs entirely locally. Online shares the lobby's [OnlineSession]: finishing
- * answering sends `finished_answering` and waits for the server's `proceed_to_word`
- * (which arrives once both players are done, or on the server timeout).
+ * answering sends `finished_answering` and waits for the server's `proceed_to_word`,
+ * and the score is exchanged via `submit_score` / `game_finished`.
+ *
+ * [sound] plays the countdown cues: a signal entering the last 2 minutes of
+ * answering / last 30 seconds of the word round, and a tick each of the final seconds.
  */
 class GameViewModel(
     holder: GameSessionHolder,
+    private val sound: SoundPlayer,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(GameUiState())
     val state: StateFlow<GameUiState> = _state.asStateFlow()
 
     private var onlineSession: OnlineSession? = null
+    private var isHost: Boolean = false
     private var timerJob: Job? = null
 
     init {
@@ -100,6 +121,8 @@ class GameViewModel(
             is PendingGame.Solo -> startRound(pending.round)
             is PendingGame.Online -> {
                 onlineSession = pending.session
+                isHost = pending.isHost
+                _state.update { it.copy(isOnline = true) }
                 startRound(pending.round)
                 listenOnline(pending.session)
             }
@@ -110,7 +133,12 @@ class GameViewModel(
         // Shuffle the question order so the collected letters don't spell the word.
         val order = round.questions.indices.shuffled()
         _state.update { it.copy(round = round, order = order, phase = GamePhase.Answering(0)) }
-        startCountdown(ANSWER_SECONDS) { finishAnswering() }
+        // Answering round: 15 min, with a signal entering the last 2 minutes.
+        startCountdown(
+            seconds = ANSWER_SECONDS,
+            onSecond = { remaining -> if (remaining == ANSWER_WARNING_SECONDS) raiseWarning() },
+            onExpire = { finishAnswering() },
+        )
     }
 
     private fun listenOnline(session: OnlineSession) {
@@ -118,10 +146,30 @@ class GameViewModel(
             session.incoming.collect { message ->
                 when (message) {
                     ServerMessage.ProceedToWord -> enterWordPhase()
+                    is ServerMessage.GameFinished -> applyResult(message.result)
                     is ServerMessage.LobbyError -> _state.update { it.copy(error = message.message) }
-                    else -> Unit // game_finished etc. is a later slice
+                    else -> Unit
                 }
             }
+        }
+    }
+
+    private fun applyResult(result: GameResult) {
+        val me = if (isHost) result.host else result.guest
+        val opponent = if (isHost) result.guest else result.host
+        val match = when (result.outcome) {
+            GameOutcome.TIE -> MatchResult.TIE
+            GameOutcome.HOST_WON -> if (isHost) MatchResult.WON else MatchResult.LOST
+            GameOutcome.GUEST_WON -> if (isHost) MatchResult.LOST else MatchResult.WON
+        }
+        _state.update {
+            it.copy(
+                myScore = me.score,
+                opponentName = opponent.profile.username,
+                opponentScore = opponent.score,
+                matchResult = match,
+                waitingForResult = false,
+            )
         }
     }
 
@@ -185,7 +233,20 @@ class GameViewModel(
                 waitingForOpponent = false,
             )
         }
-        startCountdown(WORD_SECONDS) { submit() }
+        // Word round: 2 min, signal at 30s left, then a tick each of the last 10s.
+        startCountdown(
+            seconds = WORD_SECONDS,
+            onSecond = { remaining ->
+                if (remaining == WORD_WARNING_SECONDS) raiseWarning()
+                if (remaining in 1..TICK_FROM_SECONDS) sound.playTick()
+            },
+            onExpire = { submit() },
+        )
+    }
+
+    private fun raiseWarning() {
+        sound.playSignal()
+        _state.update { it.copy(timerWarning = true) }
     }
 
     // --- word phase ---
@@ -229,22 +290,58 @@ class GameViewModel(
 
     fun clearGuess() = _state.update { it.copy(guess = "") }
 
+    /**
+     * Scores the round and shows the results. Solo shows the score immediately; online
+     * sends `submit_score` and waits for the server's `game_finished` (which decides the
+     * winner). A wrong twaalfletterwoord means a score of 0 — you lose.
+     */
     fun submit() {
+        if (_state.value.phase != GamePhase.Word) return
         timerJob?.cancel()
-        _state.update { it.copy(phase = GamePhase.Submitted) }
+        val state = _state.value
+        val round = state.round ?: return
+        val guessed = state.guess.equals(round.word, ignoreCase = true)
+        val score = computeScore(state, round, guessed)
+        val session = onlineSession
+        if (session == null) {
+            _state.update { it.copy(phase = GamePhase.Results, myScore = score, guessedWord = guessed) }
+        } else {
+            _state.update {
+                it.copy(phase = GamePhase.Results, myScore = score, guessedWord = guessed, waitingForResult = true)
+            }
+            viewModelScope.launch { runCatching { session.send(ClientMessage.SubmitScore(score)) } }
+        }
+    }
+
+    /** Counts correct answers and bought letters, then applies [scoreRound]. */
+    private fun computeScore(state: GameUiState, round: SoloRound, guessedCorrectly: Boolean): Int {
+        val correctCount = state.order.indices.count { presentationIndex ->
+            val question = round.questions.getOrNull(state.order[presentationIndex])
+            val answer = state.answers[presentationIndex]?.trim().orEmpty()
+            question != null && answer.isNotEmpty() &&
+                answer.equals(question.correctAnswer.trim(), ignoreCase = true)
+        }
+        val boughtLetters = state.slots.count { it != null }
+        return scoreRound(
+            correctCount = correctCount,
+            questionCount = state.order.size,
+            boughtLetters = boughtLetters,
+            guessedWord = guessedCorrectly,
+        )
     }
 
     // --- timer ---
 
-    private fun startCountdown(seconds: Int, onExpire: () -> Unit) {
+    private fun startCountdown(seconds: Int, onSecond: (Int) -> Unit = {}, onExpire: () -> Unit) {
         timerJob?.cancel()
-        _state.update { it.copy(remainingSeconds = seconds) }
+        _state.update { it.copy(remainingSeconds = seconds, timerWarning = false) }
         timerJob = viewModelScope.launch {
             var remaining = seconds
             while (remaining > 0) {
                 delay(1000)
                 remaining--
                 _state.update { it.copy(remainingSeconds = remaining) }
+                onSecond(remaining)
             }
             onExpire()
         }
@@ -263,7 +360,10 @@ class GameViewModel(
     }
 
     private companion object {
-        const val ANSWER_SECONDS = 300
-        const val WORD_SECONDS = 120
+        const val ANSWER_SECONDS = 15 * 60   // first round: 15 minutes
+        const val ANSWER_WARNING_SECONDS = 2 * 60 // signal when the last 2 minutes start
+        const val WORD_SECONDS = 2 * 60      // word round: 2 minutes
+        const val WORD_WARNING_SECONDS = 30  // signal when the last 30 seconds start
+        const val TICK_FROM_SECONDS = 10     // tick each of the final 10 seconds
     }
 }
