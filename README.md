@@ -12,6 +12,37 @@ This is a Kotlin Multiplatform project targeting Android, iOS, Desktop (JVM).
     Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
     folder is the appropriate location.
 
+### Prerequisites
+
+- **JDK 17+** (the Gradle toolchain will download a matching JDK if one is missing).
+- **Android Studio** (latest stable) with the **Android SDK** — for the Android app and as the recommended IDE.
+- **Xcode** (macOS only) — only needed to run the iOS app.
+
+### Setup
+
+1. Clone the repo and open it in Android Studio:
+   ```sh
+   git clone <repo-url>
+   cd tweevoortwaalfkmp
+   ```
+2. Android Studio writes `local.properties` (with your `sdk.dir`) on first sync. If you build from the
+   command line instead, create it yourself:
+   ```properties
+   sdk.dir=/path/to/your/Android/sdk
+   ```
+3. (Optional) Point the app at a backend. With no config it talks to a **local** backend on `localhost`
+   (the Android emulator uses `10.0.2.2`), so just run the `2-voor-12` backend alongside it. To use a
+   deployed backend instead, set the `backend.url` Gradle property (must end with a trailing slash) in
+   `gradle.properties`, `~/.gradle/gradle.properties`, or per build:
+   ```sh
+   ./gradlew :desktopApp:run -Pbackend.url=https://your-backend.example.com/
+   ```
+   The backend URL can also be changed at runtime from the in-app Settings screen.
+4. Build everything to verify the setup:
+   ```sh
+   ./gradlew build
+   ```
+
 ### Running the apps
 
 Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
