@@ -137,7 +137,9 @@ fun LetterStrip(letters: List<Char?>, currentIndex: Int?) {
  */
 @Composable
 fun KnightGrid(grid: String, modifier: Modifier = Modifier) {
-    val cells = grid.padEnd(9).take(9)
+    // The 8 letters fill the 8 outer cells in reading order; the center is never
+    // part of a knight's-move path, so it holds no letter and shows a disabled "×".
+    val letters = grid.filter { !it.isWhitespace() }
     Column(
         modifier = modifier.width(200.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -146,7 +148,10 @@ fun KnightGrid(grid: String, modifier: Modifier = Modifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 for (col in 0 until 3) {
                     val isCenter = row == 1 && col == 1
-                    val char = cells[row * 3 + col]
+                    // Index into the letters skipping the center cell.
+                    val cellIndex = row * 3 + col
+                    val letterIndex = if (cellIndex > 4) cellIndex - 1 else cellIndex
+                    val char = if (isCenter || letterIndex >= letters.length) ' ' else letters[letterIndex]
                     val shape = RoundedCornerShape(8.dp)
                     Box(
                         modifier = Modifier

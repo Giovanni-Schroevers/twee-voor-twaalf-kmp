@@ -12,6 +12,7 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.PuzzlePreference
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.QuizMode
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ServerMessage
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.backendMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,8 +96,8 @@ class OnlineLobbyViewModel(
 
     /** Host action: ask the server to start the match. */
     fun start() {
-        val current = session ?: return
         val ui = _state.value
+        val current = session ?: return
         if (ui.role != LobbyRole.HOST) return
         if (ui.opponent == null) {
             _state.update { it.copy(error = "Wacht tot een speler meedoet.") }
@@ -149,11 +150,23 @@ class OnlineLobbyViewModel(
             }
             session = opened
             _state.update { it.copy(connected = true) }
-            opened.incoming.collect { message ->
-                if (generationAtStart != generation) return@collect
-                reduce(message, role, opened)
+            try {
+                opened.incoming.collect { message ->
+                    if (generationAtStart != generation) return@collect
+                    reduce(message, role, opened)
+                }
+                if (generationAtStart == generation) _state.update { it.copy(connected = false) }
+            } catch (e: CancellationException) {
+                throw e // handoff/reconnect cancelled us on purpose; let it propagate.
+            } catch (e: Throwable) {
+                // The socket dropped (e.g. the server closed mid-message). Surface it
+                // instead of letting the exception crash the app from this coroutine.
+                if (generationAtStart == generation) {
+                    _state.update {
+                        it.copy(connected = false, error = "De verbinding met de server is verbroken. Probeer opnieuw.")
+                    }
+                }
             }
-            if (generationAtStart == generation) _state.update { it.copy(connected = false) }
         }
     }
 

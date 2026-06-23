@@ -10,6 +10,7 @@ import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.OnlineSession
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.Question
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.ServerMessage
 import com.fsa_profgroep_4.twee_voor_twaalf_kmp.network.SoloRound
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -143,13 +144,19 @@ class GameViewModel(
 
     private fun listenOnline(session: OnlineSession) {
         viewModelScope.launch {
-            session.incoming.collect { message ->
-                when (message) {
-                    ServerMessage.ProceedToWord -> enterWordPhase()
-                    is ServerMessage.GameFinished -> applyResult(message.result)
-                    is ServerMessage.LobbyError -> _state.update { it.copy(error = message.message) }
-                    else -> Unit
+            try {
+                session.incoming.collect { message ->
+                    when (message) {
+                        ServerMessage.ProceedToWord -> enterWordPhase()
+                        is ServerMessage.GameFinished -> applyResult(message.result)
+                        is ServerMessage.LobbyError -> _state.update { it.copy(error = message.message) }
+                        else -> Unit
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _state.update { it.copy(error = "De verbinding met de server is verbroken.") }
             }
         }
     }
