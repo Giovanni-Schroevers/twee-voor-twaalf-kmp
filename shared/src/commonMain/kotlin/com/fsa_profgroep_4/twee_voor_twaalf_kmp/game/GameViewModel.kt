@@ -32,7 +32,7 @@ enum class MatchResult { WON, LOST, TIE }
 /**
  * A letter collected for one question. [presentationIndex] is its place in the bank
  * (the order questions were answered); [wordPosition] is the slot in the
- * twaalfletterwoord it belongs to (which differs, since questions are shuffled).
+ * twaalfletterwoord it belongs to.
  * [typed] is the first letter of the player's answer (possibly wrong); placing the
  * chip drops the [correct] letter into [wordPosition].
  */
@@ -47,8 +47,9 @@ data class CollectedLetter(
 data class GameUiState(
     val round: SoloRound? = null,
     /**
-     * The shuffled question order: `order[presentationIndex] = wordPosition`. Questions
-     * are answered in this order so the collected letters don't spell the word.
+     * The question order: `order[presentationIndex] = wordPosition`. Currently the
+     * identity mapping (questions are shown in the backend's word order), but kept as
+     * an indirection so a shuffle can be reintroduced later without touching the rest.
      */
     val order: List<Int> = emptyList(),
     val phase: GamePhase = GamePhase.Answering(0),
@@ -131,8 +132,9 @@ class GameViewModel(
     }
 
     private fun startRound(round: SoloRound) {
-        // Shuffle the question order so the collected letters don't spell the word.
-        val order = round.questions.indices.shuffled()
+        // Present questions in the backend's order so both players see the same
+        // quiz in the same order (the backend does not shuffle the round).
+        val order = round.questions.indices.toList()
         _state.update { it.copy(round = round, order = order, phase = GamePhase.Answering(0)) }
         // Answering round: 15 min, with a signal entering the last 2 minutes.
         startCountdown(
