@@ -31,18 +31,19 @@ enum class MatchResult { WON, LOST, TIE }
 
 /**
  * A letter collected for one question. [presentationIndex] is its place in the bank
- * (the order questions were answered); [wordPosition] is the slot in the
- * twaalfletterwoord it belongs to.
- * [typed] is the first letter of the player's answer (possibly wrong); placing the
- * chip drops the [correct] letter into [wordPosition].
+ * (the order questions were answered). [typed] is the first letter of the player's
+ * answer (possibly wrong); placing the chip drops the [correct] letter into the first
+ * free word slot that needs it. [placedAt] is the slot it currently occupies, or null
+ * while it sits unplaced in the bank.
  */
 data class CollectedLetter(
     val presentationIndex: Int,
-    val wordPosition: Int,
     val typed: Char?,
     val correct: Char,
-    val placed: Boolean = false,
-)
+    val placedAt: Int? = null,
+) {
+    val placed: Boolean get() = placedAt != null
+}
 
 data class GameUiState(
     val round: SoloRound? = null,
@@ -228,7 +229,6 @@ class GameViewModel(
         val letters = state.order.mapIndexed { presentationIndex, wordPosition ->
             CollectedLetter(
                 presentationIndex = presentationIndex,
-                wordPosition = wordPosition,
                 typed = state.answers[presentationIndex]?.trim()?.firstOrNull()?.uppercaseChar(),
                 correct = questions.getOrNull(wordPosition)?.correctLetter?.firstOrNull()?.uppercaseChar() ?: ' ',
             )
@@ -262,20 +262,40 @@ class GameViewModel(
 
     /**
      * Tapping the bank chip at [presentationIndex] drops its correct letter into the
-     * word slot it belongs to ([CollectedLetter.wordPosition]) — so a wrong answer's
-     * chip reveals and places the question's actual letter. Tapping it again removes it.
+     * first still-empty word slot that needs that letter (so duplicate letters fill
+     * left to right), revealing the question's actual letter even for a wrong answer.
+     * Tapping a placed chip again pulls it back out of the slot it occupies.
      */
     fun onLetterClick(presentationIndex: Int) {
-        val letter = _state.value.letters.firstOrNull { it.presentationIndex == presentationIndex } ?: return
-        val nowPlaced = !letter.placed
+        val state = _state.value
+        val letter = state.letters.firstOrNull { it.presentationIndex == presentationIndex } ?: return
+        val word = state.round?.word ?: return
+
+        val placedAt = letter.placedAt
+        if (placedAt != null) {
+            // Already placed: pull it back out of its slot.
+            _state.update {
+                it.copy(
+                    letters = it.letters.map { l ->
+                        if (l.presentationIndex == presentationIndex) l.copy(placedAt = null) else l
+                    },
+                    slots = it.slots.toMutableList().also { slots -> slots[placedAt] = null },
+                )
+            }
+            return
+        }
+
+        // Not placed: find the first empty slot whose word letter matches this letter.
+        val target = state.slots.indices.firstOrNull { i ->
+            state.slots[i] == null && word.getOrNull(i)?.uppercaseChar() == letter.correct
+        } ?: return // no free slot needs this letter
+
         _state.update {
             it.copy(
                 letters = it.letters.map { l ->
-                    if (l.presentationIndex == presentationIndex) l.copy(placed = nowPlaced) else l
+                    if (l.presentationIndex == presentationIndex) l.copy(placedAt = target) else l
                 },
-                slots = it.slots.toMutableList().also { slots ->
-                    slots[letter.wordPosition] = if (nowPlaced) letter.correct else null
-                },
+                slots = it.slots.toMutableList().also { slots -> slots[target] = letter.correct },
             )
         }
     }
@@ -285,7 +305,7 @@ class GameViewModel(
         _state.update {
             it.copy(
                 slots = List(it.slots.size) { null },
-                letters = it.letters.map { l -> l.copy(placed = false) },
+                letters = it.letters.map { l -> l.copy(placedAt = null) },
             )
         }
     }

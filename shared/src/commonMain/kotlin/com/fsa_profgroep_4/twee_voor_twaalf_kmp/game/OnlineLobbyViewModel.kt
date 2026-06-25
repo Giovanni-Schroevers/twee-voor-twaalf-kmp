@@ -39,6 +39,8 @@ data class OnlineLobbyUiState(
     val quizMode: QuizMode = QuizMode.SAME,
     val joinCodeInput: String = "",
     val error: String? = null,
+    /** Host-only: true while waiting for the server to start the match after "Start spel". */
+    val starting: Boolean = false,
     /** Flips true once the game has started; the screen navigates to the game. */
     val navigateToGame: Boolean = false,
 )
@@ -98,15 +100,18 @@ class OnlineLobbyViewModel(
     fun start() {
         val ui = _state.value
         val current = session ?: return
-        if (ui.role != LobbyRole.HOST) return
+        if (ui.role != LobbyRole.HOST || ui.starting) return
         if (ui.opponent == null) {
             _state.update { it.copy(error = "Wacht tot een speler meedoet.") }
             return
         }
+        _state.update { it.copy(starting = true, error = null) }
         viewModelScope.launch {
             runCatching { current.send(ClientMessage.StartGame(ui.quizMode, ui.puzzle)) }
                 .onFailure { failure ->
-                    _state.update { it.copy(error = failure.backendMessage("Kon het spel niet starten.")) }
+                    _state.update {
+                        it.copy(starting = false, error = failure.backendMessage("Kon het spel niet starten."))
+                    }
                 }
         }
     }
@@ -163,7 +168,11 @@ class OnlineLobbyViewModel(
                 // instead of letting the exception crash the app from this coroutine.
                 if (generationAtStart == generation) {
                     _state.update {
-                        it.copy(connected = false, error = "De verbinding met de server is verbroken. Probeer opnieuw.")
+                        it.copy(
+                            connected = false,
+                            starting = false,
+                            error = "De verbinding met de server is verbroken. Probeer opnieuw.",
+                        )
                     }
                 }
             }
@@ -179,7 +188,7 @@ class OnlineLobbyViewModel(
             is ServerMessage.GameStarted -> handOff(current, message)
             ServerMessage.ProceedToWord, is ServerMessage.GameFinished -> Unit // not relevant in the lobby
             is ServerMessage.LobbyError -> {
-                _state.update { it.copy(error = message.message) }
+                _state.update { it.copy(error = message.message, starting = false) }
                 // A bad/full join leaves us with no lobby; fall back to hosting our own.
                 if (role == LobbyRole.GUEST) connect(LobbyRole.HOST, code = null)
             }

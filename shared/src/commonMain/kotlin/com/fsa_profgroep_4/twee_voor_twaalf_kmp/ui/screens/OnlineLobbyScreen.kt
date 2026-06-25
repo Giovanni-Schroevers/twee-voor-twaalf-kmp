@@ -194,6 +194,7 @@ private fun HostContent(
     BrandButton(
         text = "Start spel",
         onClick = viewModel::start,
+        loading = state.starting,
     )
 }
 
